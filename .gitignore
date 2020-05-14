@@ -1,0 +1,14 @@
+ignore/
+.vscode/
+Thumbs.db
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+build/
+dist/
+.cache
+.pytest_cache/
+.ipynb_checkpoints
+.spyderproject
+.spyproject
