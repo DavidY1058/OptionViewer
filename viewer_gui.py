@@ -1,5 +1,5 @@
 from european_option import EuropeanOption
-from tkinter import Tk, Label, Button, Entry, W, E, Frame, RIGHT, LEFT, Toplevel, IntVar, END
+from tkinter import Tk, Label, Button, Entry, W, E, Frame, RIGHT, LEFT, Toplevel
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -19,11 +19,25 @@ class OptionViewerGUI:
             ("RiskFree",   "RiskFree(%)", "f"), 
             ("DvdYield",   "DvdYield(%)", "f"), 
             ]
+    
+    ScenInputField = ["Spot", "DayToExpiry", "RiskFree"] 
+    #Need to enter ivol for each strike as well but will dynamically generate
+    
     NTradeInput = 6
     NScenario = 5
     
-    #TradeRecord: dict for the inputs for each option trade
-    #Spot: current level of the underlying asset
+    
+    #GUI design:  
+    #===========
+    #Main Page: enter the trade detail a max of NTradeInput trades, 
+    #then return a list of dict (tradeRecord) with len(tradeRecord)=NTradeInput
+    #From this calculate per trade analytics, analytics as a portfolio 
+    #and payoff profile chart
+    #Scenario Page: after entered the trade details in Main Page, 
+    #this page allows entering the inputs of up to NScenario of scenarios
+    #After then, generate the portfolio statistics for each scenario.
+    
+    
     
     def __init__(self, master):
         self.tradeRecord = []
@@ -31,7 +45,8 @@ class OptionViewerGUI:
         self.master = master
         master.title("Option Viewer")
    
-        #Set the framework for the components     
+        #Set the framework for the components 
+        #====================================
         topFrame = Frame(master)
         topFrame.pack()
         
@@ -49,85 +64,69 @@ class OptionViewerGUI:
         seFrame.pack(side=RIGHT)
 
         self.swFrame=swFrame
+        self.seFrame=seFrame
      
         #Input for individual trades (NW Frame)        
+        #=====================================
+        #Wrap the data validator
+        vcmdFloat = nwFrame.register(self.validateFloat) 
+        vcmdPutCall = nwFrame.register(self.validatePutCall) 
+
+        #Title and spot price entry
         nwFrameTitleLabel=Label(nwFrame, text="Option Trades")
         nwFrameTitleLabel.grid(row=0, column=0, columnspan=2, sticky=W)
 
         spotLabel=Label(nwFrame, text="Spot")
         spotLabel.grid(row=0, column=len(self.TradeInputField)-1, sticky=E)
+        self.spotEntry = Entry(nwFrame, validate="key", validatecommand=(vcmdFloat, '%P'))
+        self.spotEntry.grid(row=0, column=len(self.TradeInputField), sticky=E)
 
+        #Input area for individual trades        
         
-        trade_input_label=[]
-        self.trade_entry = [ [] for i in range(self.NTradeInput) ]
-                
-        vcmdFloat = nwFrame.register(self.validateFloat) # we have to wrap the command
-        vcmdPutCall = nwFrame.register(self.validatePutCall) # we have to wrap the command
-        
+        #Labels for field names and row number
+        tradeInputLabel=[]
         for _, dispName, _ in self.TradeInputField:
-            trade_input_label.append(Label(nwFrame, text=dispName))
+            tradeInputLabel.append(Label(nwFrame, text=dispName))
+        for i in range(len(self.TradeInputField)):            
+            tradeInputLabel[i].grid(row=1, column=i+1, sticky=W)
             
-        for j in range(self.NTradeInput):
-            for _, _, ftype  in self.TradeInputField:
-                if ftype == "f":
-                    self.trade_entry[j].append(Entry(nwFrame, validate="key", validatecommand=(vcmdFloat, '%P')))
-                elif ftype == "putCall":
-                    self.trade_entry[j].append(Entry(nwFrame, validate="key", validatecommand=(vcmdPutCall, '%P')))
-
-        for i, data in enumerate(self.TradeInputField):
-            _, dispName, _ = data
-            trade_input_label.append(Label(nwFrame, text=dispName))
-        
-        nTradeInputField = len(self.TradeInputField)
-        
-        #print trade/row number 
         for j in range(self.NTradeInput):
             rowNumLabel = Label(nwFrame, text=str(j+1))
             rowNumLabel.grid(row=j+2, column=0, sticky=W)           
-                
-        for i in range(nTradeInputField):            
-            trade_input_label[i].grid(row=1, column=i+1, sticky=W)           
+
+        
+        #Individual entry box        
+        self.tradeEntry = [ [] for i in range(self.NTradeInput) ]        
+        for j in range(self.NTradeInput):
+            for _, _, ftype  in self.TradeInputField:
+                if ftype == "f":
+                    self.tradeEntry[j].append(Entry(nwFrame, validate="key", validatecommand=(vcmdFloat, '%P')))
+                elif ftype == "putCall":
+                    self.tradeEntry[j].append(Entry(nwFrame, validate="key", validatecommand=(vcmdPutCall, '%P')))
+
+        for i in range(len(self.TradeInputField)):            
             for j in range(self.NTradeInput):
-                self.trade_entry[j][i].grid(row=j+2, column=i+1, sticky=W+E)
-                        
-        self.calcButton = Button(nwFrame, text="Calculate", command=self.calcOptions)
+                self.tradeEntry[j][i].grid(row=j+2, column=i+1, sticky=W+E)
+
+
+        #Control buttons
+        nTradeInputField = len(self.TradeInputField)                
+        self.calcButton = Button(nwFrame, text="Calculate", command=self.mainCalculation)
         self.calcButton.grid(row=self.NTradeInput+2, column=nTradeInputField-1, sticky=W+E)
-        
-        
+                
         self.scenButton = Button(nwFrame, text="Scenario", command=self.scenarioWin)
         self.scenButton.grid(row=self.NTradeInput+2, column=nTradeInputField, sticky=W+E)
         
 
-        
-        
+        #Setup payoff chart area (SW Frame)        
+        #=====================================        
         fig = Figure(figsize=(10,5))
-        a = fig.add_subplot(121)
-        x,y=[],[]
-        self.line1, = a.plot(x,y,color='blue')   
-        self.line2, = a.plot(x,y,color='red')   
-        #self.canvas = FigureCanvasTkAgg(fig, master=swFrame)
-        #self.canvas.get_tk_widget().pack()
-        
-        
-        b = fig.add_subplot(122)
-        self.line3, = b.plot(x,y,color='green')   
-        #self.canvas2 = FigureCanvasTkAgg(fig, master=swFrame)
-        #self.canvas2.get_tk_widget().pack()
-        
+        fig.add_subplot(121)        
+        fig.add_subplot(122)        
         self.canvas = FigureCanvasTkAgg(fig, master=swFrame)
         self.canvas.get_tk_widget().pack()
         
-        
-        resTitleLabel = Label(seFrame, text = "Portfolio Calc")
-        resTitleLabel.pack()
-        
-        prtfRes = self.prtfCalc()
-        s = f"FV:{prtfRes['FairValue']:.2f} Delta:{prtfRes['Delta']:.2f}"
-        resLabel = Label(seFrame, text = s)
-        resLabel.pack()
-   
-    def uniqueStrike(self, tradeRecord):
-        return [101.0, 103.0]
+
     
     
     
@@ -142,24 +141,25 @@ class OptionViewerGUI:
         rightFrame.pack(side=RIGHT)
         self.rightFrame = rightFrame
 
-        uniqStrike = self.uniqueStrike(self.tradeRecord)
+        uniqStrike = list({tr["Strike"] for tr in self.tradeRecord if tr})
         self.uniqStrike = uniqStrike
         
         titleLabel = Label(leftFrame, text = "Scenario")
         titleLabel.grid(row=0, column=0, columnspan=2)
         
-        calcButton = Button(leftFrame, text = "Calculate", command=self.calcScen)
+        calcButton = Button(leftFrame, text = "Calculate", command=self.scenarioCalculation)
         calcButton.grid(row=self.NScenario+3, column=len(uniqStrike)+3)
         
-        scenInputHeading = ["Spot", "DayToExpiry", "RiskFree"]
+        
+        self.scenInputHeading = self.ScenInputField.copy()
         for i in range(len(uniqStrike)):
-            scenInputHeading.append(f"k={uniqStrike[i]:.2f}")
-        self.scenInputHeading = scenInputHeading
+            self.scenInputHeading.append(f"k={uniqStrike[i]:.2f}")
+
 
         ivLable = Label(leftFrame, text = "ImplVol For strike=")
         ivLable.grid(row=0, column=4, columnspan=len(uniqStrike))
 
-        for i,s in enumerate(scenInputHeading):
+        for i,s in enumerate(self.scenInputHeading):
             l = Label(leftFrame, text = s)
             l.grid(row=1, column=i+1)
             
@@ -171,7 +171,7 @@ class OptionViewerGUI:
         vcmdFloat = leftFrame.register(self.validateFloat) # we have to wrap the command
                 
         #for _, dispName, _ in self.TradeInputField:
-        #    trade_input_label.append(Label(nwFrame, text=dispName))
+        #    tradeInputLabel.append(Label(nwFrame, text=dispName))
             
         for j in range(self.NScenario):            
             for i in range(3+len(uniqStrike)):
@@ -179,28 +179,10 @@ class OptionViewerGUI:
                 self.scenarioEntry[j][i].grid(row=j+2, column=i+1, sticky=W+E)
      
 
-    def prtfCalc(self):
-        calc = {}
-        calc["FairValue"], calc["Delta"] = 0.0, 0.0
-        for i, tr in enumerate(self.tradeRecord):
-            if tr:
-                #!!!!
-                spot = 100
-                opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)
-                opt.setLevel(spot, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
-                calc["FairValue"] +=  opt.fairValue() * tr["Notional"]
-                calc["Delta"] +=  opt.delta() * tr["Notional"]
-        return calc           
-   
-    def perScenCalc(self):
-        #scenCalc = [ {} for i in range(self.NScenario) ]
-        res = [0] * self.NScenario
-        for i, sc in enumerate(self.scenRecord):
-            if sc:
-                res[i] = self.scenCalc(sc)
-        return res
         
-    def scenCalc(self, scen):
+
+        
+    def perScenCalc(self, scen):
         calc = {}
         calc["FairValue"], calc["Delta"] = 0.0, 0.0
         for i, tr in enumerate(self.tradeRecord):
@@ -211,106 +193,175 @@ class OptionViewerGUI:
                 calc["Delta"] +=  opt.delta() * tr["Notional"]
         return calc
 
-    def calcScen(self):
-        self.scenRecord = [ {} for i in range(self.NScenario) ]        
+    def parseScenario(self, scenarioEntry, scenarioField):
+        nScen = len(scenarioEntry)
+        scenRecord = [ {} for i in range(nScen) ]        
+        hasAllInput = [None] * nScen
         
-        for i,r in enumerate(self.scenarioEntry):
-            
+        for i,r in enumerate(scenarioEntry):            
             nValidField = 0
             for elem in r:
                 val = elem.get()
-                if val: nValidField+=1
-                
-
-            if nValidField == len(self.uniqStrike)+3:
-                statusStr = "ok"                      
-                for j, fld in enumerate(self.scenInputHeading):
+                if val: nValidField+=1                
+            if nValidField == len(scenarioField):
+                hasAllInput[i] = True
+                for j, fld in enumerate(scenarioField):
                     val = r[j].get().strip()
-                    self.scenRecord[i][fld]=float(val)
-                                                                
+                    scenRecord[i][fld]=float(val)                    
             elif nValidField >0:
-                statusStr = "Input Error"
-            else:
-                statusStr = ""
+                hasAllInput[i] = False
+        return (scenRecord, hasAllInput)
+
+
+    def scenarioCalculation(self):
+
+        self.scenRecord, hasAllInput = self.parseScenario(self.scenarioEntry, self.scenInputHeading)
+        for i, status in enumerate(hasAllInput):
+            statusStr = "ok" if status == True else "Input Error"
             rowNumLabel = Label(self.rightFrame, text=statusStr )
             rowNumLabel.grid(row=i+3, column=0, padx=10, sticky=W)  
-        
-        scenCalcRes=self.perScenCalc()
-        for i, calc in enumerate(scenCalcRes):
-            if calc:
+
+        for i, sc in enumerate(self.scenRecord):
+            if sc:
+                calc = self.perScenCalc(sc)
                 s = f"{calc['FairValue']:2.3f} {calc['Delta']:2.3f}"
                 calcLabel = Label(self.rightFrame, text=s)
                 calcLabel.grid(row=i+3, column=1, sticky=W)  
 
 
+
+
      
-    def calcOptions(self):
-        self.tradeRecord = [ {} for i in range(self.NTradeInput) ]        
+    def mainCalculation(self):
+        #Get the spot level 
+        try:
+            self.spot = float(self.spotEntry.get().strip())
+        except ValueError:
+            popup = Tk()
+            popup.geometry("+300+300")
+            popup.wm_title("Warning: ")
+            label = Label(popup, text="Spot level has not been set")
+            label.pack(side="top", fill="x", padx=10, pady=10)
+            popupButton = Button(popup, text="Okay", command = popup.destroy)
+            popupButton.pack()
+            return 
         
-        for i,r in enumerate(self.trade_entry):
+        
+        #Get the individual trade entries.  Note that some of them can be empty
+        self.tradeRecord, hasAllInput=self.parseTradeRecord(self.tradeEntry, self.TradeInputField)
+        
+        for i, status in enumerate(hasAllInput):
+            if status is not None:
+                statusStr = "ok" if status == True else "Incomplete input"
+                rowNumLabel = Label(self.neFrame, text=statusStr )
+                rowNumLabel.grid(row=i+1, column=0, padx=10, sticky=W)  
+        
+
+        #Output 1: per trade analytics        
+        tradeCalc=self.perTradeCalc()
+        for i, calc in enumerate(tradeCalc):
+            if calc:
+                s = f"{calc['FairValue']:2.3f} {calc['Delta']:2.3f} {calc['Gamma']:2.3f} {calc['Vega']:2.3f} {calc['Rho']:2.3f}"
+                calcLabel = Label(self.neFrame, text=s)
+                calcLabel.grid(row=i+1, column=1, sticky=W)  
+        
+        #Output 2: portfolioi wide analytics
+        #=====================================                
+        resTitleLabel = Label(self.seFrame, text = "Portfolio Calc")
+        resTitleLabel.pack()
+        
+        prtfRes = self.prtfCalc()
+        s = f"FV:{prtfRes['FairValue']:.2f} Delta:{prtfRes['Delta']:.2f}"
+        resLabel = Label(self.seFrame, text = s)
+        resLabel.pack()
+        
+        #Output 3: payoff and sensitivity charts
+        # generate likely to be most interesting range [s +/- 3*vol*sqrt(t)]
+        # To-do: add a scroll bar to control the range        
+        nXForPlot, ylimAdj = 21, 1.01
+        stkUsed = {tr["Strike"] for tr in self.tradeRecord if tr}
+        volUsed = {tr["ImplVol"] for tr in self.tradeRecord if tr}
+        ttmUsed = {tr["DayToExpiry"] for tr in self.tradeRecord if tr}
+        volSqT = max(volUsed)*(max(ttmUsed)/365.0)**0.5
+        sArr = set(np.linspace(max(0.0,self.spot-3.0*volSqT), self.spot+3.0*volSqT, nXForPlot))
+        sArr.update(stkUsed)
+        sArr = list(sArr)
+        sArr.sort()
+        
+        setSpotMVAsZero=True
+        payoffNow = self.payoffProfile(sArr, setSpotMVAsZero, False)
+        payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, True)
+        ax = self.canvas.figure.axes[0]
+        ax.set_xlim(min(sArr), max(sArr))
+        ax.set_ylim(min(payoffExpiry)*ylimAdj, max(payoffExpiry)*ylimAdj)
+        ax.plot(sArr,payoffNow,color='blue', label='ValDt')   
+        ax.plot(sArr,payoffExpiry,color='red', label='Expiry')   
+        ax.set_title('Payoff Profile')
+        ax.legend()        
+        
+        deltaProfile = self.deltaProfile(sArr)
+        ax = self.canvas.figure.axes[1]
+        ax.set_xlim(min(sArr), max(sArr))
+        ax.set_ylim(min(deltaProfile)*ylimAdj, max(deltaProfile)*ylimAdj)
+        ax.plot(sArr,deltaProfile,color='green', label='Delta')   
+
+        self.canvas.draw()
+
+
+    #Read the trade input data from tradeEntry TK Entry boxes to an array
+    def parseTradeRecord(self, tradeEntry, entryFieldName):
+        nTradeEntry = len(tradeEntry)
+        tradeRecord = [ {} for i in range(nTradeEntry) ]        
+        hasAllInput = [None] * nTradeEntry
+        
+        #tradeEntry is an array of TK Entry
+        #row x col = self.NTradeInput x #entryFieldName
+        for i,r in enumerate(tradeEntry):
             
             nValidField = 0
             for elem in r:
                 val = elem.get()
                 if val: nValidField+=1
                 
-
             if nValidField == len(self.TradeInputField):
-                statusStr = "ok"      
-                
-                for j, field in enumerate(self.TradeInputField):
+                hasAllInput[i] = True                      
+                for j, field in enumerate(entryFieldName):
                     fld, _, ftype = field
                     val = r[j].get().strip()
                     print(val)
                     if ftype == "f":
-                        self.tradeRecord[i][fld]=float(val)
+                        tradeRecord[i][fld]=float(val)
                     elif ftype=="putCall":
-                        self.tradeRecord[i][fld]= "Call" if val.upper() == "C" else "Put"
-                                                                
+                        tradeRecord[i][fld]= "Call" if val.upper() == "C" else "Put"                                                                
             elif nValidField >0:
-                statusStr = "Input Error"
+                hasAllInput[i] = False
             else:
-                statusStr = ""
-            rowNumLabel = Label(self.neFrame, text=statusStr )
-            rowNumLabel.grid(row=i+1, column=0, padx=10, sticky=W)  
+                hasAllInput[i] = None
         
-        tradeCalc=self.perTradeCalc()
-        for i, calc in enumerate(tradeCalc):
-            if calc:
-                s = f"{calc['FairValue']:2.3f} {calc['Delta']:2.3f}"
-                calcLabel = Label(self.neFrame, text=s)
-                calcLabel.grid(row=i+1, column=1, sticky=W)  
-                
-        sArr = [ 80.0+2.0*i for i in range(21)]
-        payoffNow = self.payoffProfile(sArr)
-        payoffExpiry = self.payoffProfile(sArr, True)
-        self.line1.set_data(sArr, payoffNow)
-        self.line2.set_data(sArr, payoffExpiry)
-        ax = self.canvas.figure.axes[0]
-        ax.set_xlim(min(sArr), max(sArr))
-        ax.set_ylim(min(payoffExpiry)*1.01, max(payoffExpiry)*1.01)
-        #self.canvas.draw()
-        
-        deltaProfile = self.deltaProfile(sArr)
-        self.line3.set_data(sArr, deltaProfile)
-        #ax = self.canvas2.figure.axes[1]
-        ax = self.canvas.figure.axes[1]
-        ax.set_xlim(min(sArr), max(sArr))
-        ax.set_ylim(min(deltaProfile)*1.01, max(deltaProfile)*1.01)
-        #self.canvas2.draw()
-        self.canvas.draw()
-            
-    def payoffProfile(self, sArr, isAtExpiry=False):
+        return (tradeRecord, hasAllInput)
+          
+    def payoffProfile(self, sArr, spotMVAsZero=True, isAtExpiry=False):
+        if spotMVAsZero:
+            mvNow = 0.0    
+            for tr in self.tradeRecord:
+                if tr:
+                    opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)                
+                    opt.setLevel(self.spot, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
+                    mvNow += opt.fairValue()*tr["Notional"]                                
         payoff = [0.0] * len(sArr)
+        
         for tr in self.tradeRecord:
             if tr:
                 if isAtExpiry: 
                     opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], 0.00, tr["DvdYield"]/100.0)
                 else:                    
-                    opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)                
+                    opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)                                                
                 for i,s in enumerate(sArr):
                     opt.setLevel(s, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
                     payoff[i] += opt.fairValue()*tr["Notional"]            
+                    
+        for i in range(len(sArr)):
+            payoff[i] -= mvNow
         return payoff
 
     def deltaProfile(self, sArr):
@@ -324,21 +375,34 @@ class OptionViewerGUI:
         return deltaArr
    
          
-    
+    #Do calculation trade by trade (one set of analytics per trade)
     def perTradeCalc(self):
         tradeCalc = [ {} for i in range(self.NTradeInput) ]
         for i, tr in enumerate(self.tradeRecord):
             if tr:
                 opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)
-                #!!!! spot
-                spot = 100
-                opt.setLevel(spot, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
+                opt.setLevel(self.spot, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
                 tradeCalc[i]["FairValue"] =  opt.fairValue()
                 tradeCalc[i]["Delta"] =  opt.delta()
+                tradeCalc[i]["Gamma"] =  opt.gamma()
+                tradeCalc[i]["Vega"] =  opt.vega()
+                tradeCalc[i]["Rho"] =  opt.rho()
         return tradeCalc
-                
-                
-
+   
+    #Do calculation at portfolio wide level
+    def prtfCalc(self):
+        calc = {}
+        calc["FairValue"], calc["Delta"] = 0.0, 0.0
+        for i, tr in enumerate(self.tradeRecord):
+            if tr:
+                opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)
+                opt.setLevel(self.spot, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
+                calc["FairValue"] +=  opt.fairValue() * tr["Notional"]
+                calc["Delta"] +=  opt.delta() * tr["Notional"]
+        return calc   
+          
+      
+    #Validate input float number (allow -.[0-9])
     def validateFloat(self, new_text):
         if not new_text: # the field is being cleared
             return True        
@@ -351,6 +415,7 @@ class OptionViewerGUI:
         except ValueError:
             return False   
 
+    #Validate input that sets put or call (p,P for Put; c,C for Call)
     def validatePutCall(self, new_text):
         if not new_text: # the field is being cleared
             return True
@@ -363,16 +428,6 @@ class OptionViewerGUI:
         else:
             return False
 
-#    def update(self, method):
-#        if method == "add":
-#            self.total += self.entered_number
-#        elif method == "subtract":
-#            self.total -= self.entered_number
-#        else: # reset
-#            self.total = 0
-#
-#        self.total_label_text.set(self.total)
-#        self.entry.delete(0, END)
 
 root = Tk()
 my_gui = OptionViewerGUI(root)
