@@ -50,11 +50,6 @@ class OptionViewerGUI:
         topFrame = Frame(master)
         topFrame.pack()
         
-        nwFrame = Frame(topFrame)
-        nwFrame.pack(side=LEFT)
-        self.neFrame = Frame(topFrame)
-        self.neFrame.pack(side=RIGHT)
-
         botFrame = Frame(master)
         botFrame.pack()
                 
@@ -63,22 +58,23 @@ class OptionViewerGUI:
         seFrame = Frame(botFrame)
         seFrame.pack(side=RIGHT)
 
+        self.topFrame=topFrame
         self.swFrame=swFrame
         self.seFrame=seFrame
      
-        #Input for individual trades (NW Frame)        
+        #Input for individual trades (Top Frame)        
         #=====================================
         #Wrap the data validator
-        vcmdFloat = nwFrame.register(self.validateFloat) 
-        vcmdPutCall = nwFrame.register(self.validatePutCall) 
+        vcmdFloat = topFrame.register(self.validateFloat) 
+        vcmdPutCall = topFrame.register(self.validatePutCall) 
 
         #Title and spot price entry
-        nwFrameTitleLabel=Label(nwFrame, text="Option Trades")
-        nwFrameTitleLabel.grid(row=0, column=0, columnspan=2, sticky=W)
+        topFrameTitleLabel=Label(topFrame, text="Option Trades")
+        topFrameTitleLabel.grid(row=0, column=0, columnspan=2, sticky=W)
 
-        spotLabel=Label(nwFrame, text="Spot")
+        spotLabel=Label(topFrame, text="Spot")
         spotLabel.grid(row=0, column=len(self.TradeInputField)-1, sticky=E)
-        self.spotEntry = Entry(nwFrame, validate="key", validatecommand=(vcmdFloat, '%P'))
+        self.spotEntry = Entry(topFrame, validate="key", validatecommand=(vcmdFloat, '%P'))
         self.spotEntry.grid(row=0, column=len(self.TradeInputField), sticky=E)
 
         #Input area for individual trades        
@@ -86,12 +82,12 @@ class OptionViewerGUI:
         #Labels for field names and row number
         tradeInputLabel=[]
         for _, dispName, _ in self.TradeInputField:
-            tradeInputLabel.append(Label(nwFrame, text=dispName))
+            tradeInputLabel.append(Label(topFrame, text=dispName))
         for i in range(len(self.TradeInputField)):            
             tradeInputLabel[i].grid(row=1, column=i+1, sticky=W)
             
         for j in range(self.NTradeInput):
-            rowNumLabel = Label(nwFrame, text=str(j+1))
+            rowNumLabel = Label(topFrame, text=str(j+1))
             rowNumLabel.grid(row=j+2, column=0, sticky=W)           
 
         
@@ -100,9 +96,9 @@ class OptionViewerGUI:
         for j in range(self.NTradeInput):
             for _, _, ftype  in self.TradeInputField:
                 if ftype == "f":
-                    self.tradeEntry[j].append(Entry(nwFrame, validate="key", validatecommand=(vcmdFloat, '%P')))
+                    self.tradeEntry[j].append(Entry(topFrame, validate="key", validatecommand=(vcmdFloat, '%P')))
                 elif ftype == "putCall":
-                    self.tradeEntry[j].append(Entry(nwFrame, validate="key", validatecommand=(vcmdPutCall, '%P')))
+                    self.tradeEntry[j].append(Entry(topFrame, validate="key", validatecommand=(vcmdPutCall, '%P')))
 
         for i in range(len(self.TradeInputField)):            
             for j in range(self.NTradeInput):
@@ -111,10 +107,10 @@ class OptionViewerGUI:
 
         #Control buttons
         nTradeInputField = len(self.TradeInputField)                
-        self.calcButton = Button(nwFrame, text="Calculate", command=self.mainCalculation)
+        self.calcButton = Button(topFrame, text="Calculate", command=self.mainCalculation)
         self.calcButton.grid(row=self.NTradeInput+2, column=nTradeInputField-1, sticky=W+E)
                 
-        self.scenButton = Button(nwFrame, text="Scenario", command=self.scenarioWin)
+        self.scenButton = Button(topFrame, text="Scenario", command=self.scenarioWin)
         self.scenButton.grid(row=self.NTradeInput+2, column=nTradeInputField, sticky=W+E)
         
 
@@ -132,22 +128,22 @@ class OptionViewerGUI:
     
     def scenarioWin(self):        
         newWindow = Toplevel(self.master)
+        newWinOffset=f"+{self.master.winfo_rootx()}+{self.master.winfo_rooty()+self.master.winfo_height()}"
+        newWindow.geometry(newWinOffset)                    
         newWindow.title("Scenario")
    
         #Set the framework for the components     
-        leftFrame = Frame(newWindow)
-        leftFrame.pack(side=LEFT)
-        rightFrame = Frame(newWindow)
-        rightFrame.pack(side=RIGHT)
-        self.rightFrame = rightFrame
-
+        scenFrame = Frame(newWindow)
+        scenFrame.pack()
+        self.scenFrame =scenFrame
+        
         uniqStrike = list({tr["Strike"] for tr in self.tradeRecord if tr})
         self.uniqStrike = uniqStrike
         
-        titleLabel = Label(leftFrame, text = "Scenario")
+        titleLabel = Label(scenFrame, text = "Scenario")
         titleLabel.grid(row=0, column=0, columnspan=2)
         
-        calcButton = Button(leftFrame, text = "Calculate", command=self.scenarioCalculation)
+        calcButton = Button(scenFrame, text = "Calculate", command=self.scenarioCalculation)
         calcButton.grid(row=self.NScenario+3, column=len(uniqStrike)+3)
         
         
@@ -156,26 +152,24 @@ class OptionViewerGUI:
             self.scenInputHeading.append(f"k={uniqStrike[i]:.2f}")
 
 
-        ivLable = Label(leftFrame, text = "ImplVol For strike=")
+        ivLable = Label(scenFrame, text = "ImplVol For strike=")
         ivLable.grid(row=0, column=4, columnspan=len(uniqStrike))
 
         for i,s in enumerate(self.scenInputHeading):
-            l = Label(leftFrame, text = s)
+            l = Label(scenFrame, text = s)
             l.grid(row=1, column=i+1)
             
         for i in range(self.NScenario):
-            l = Label(leftFrame, text = str(i+1))
+            l = Label(scenFrame, text = str(i+1))
             l.grid(row=i+2, column=0)
     
         self.scenarioEntry = [ [] for i in range(self.NScenario) ]                
-        vcmdFloat = leftFrame.register(self.validateFloat) # we have to wrap the command
+        vcmdFloat = scenFrame.register(self.validateFloat) 
                 
-        #for _, dispName, _ in self.TradeInputField:
-        #    tradeInputLabel.append(Label(nwFrame, text=dispName))
             
         for j in range(self.NScenario):            
             for i in range(3+len(uniqStrike)):
-                self.scenarioEntry[j].append(Entry(leftFrame, validate="key", validatecommand=(vcmdFloat, '%P')))
+                self.scenarioEntry[j].append(Entry(scenFrame, validate="key", validatecommand=(vcmdFloat, '%P')))
                 self.scenarioEntry[j][i].grid(row=j+2, column=i+1, sticky=W+E)
      
 
@@ -217,16 +211,17 @@ class OptionViewerGUI:
 
         self.scenRecord, hasAllInput = self.parseScenario(self.scenarioEntry, self.scenInputHeading)
         for i, status in enumerate(hasAllInput):
-            statusStr = "ok" if status == True else "Input Error"
-            rowNumLabel = Label(self.rightFrame, text=statusStr )
-            rowNumLabel.grid(row=i+3, column=0, padx=10, sticky=W)  
+            if status:
+                statusStr = "ok" if status == True else "Input Error"
+                rowNumLabel = Label(self.scenFrame, text=statusStr )
+                rowNumLabel.grid(row=i+2, column=len(self.scenInputHeading)+1, padx=10, sticky=W)  
 
         for i, sc in enumerate(self.scenRecord):
             if sc:
                 calc = self.perScenCalc(sc)
                 s = f"{calc['FairValue']:2.3f} {calc['Delta']:2.3f}"
-                calcLabel = Label(self.rightFrame, text=s)
-                calcLabel.grid(row=i+3, column=1, sticky=W)  
+                calcLabel = Label(self.scenFrame, text=s)
+                calcLabel.grid(row=i+2, column=len(self.scenInputHeading)+2, sticky=W)  
 
 
 
@@ -253,8 +248,8 @@ class OptionViewerGUI:
         for i, status in enumerate(hasAllInput):
             if status is not None:
                 statusStr = "ok" if status == True else "Incomplete input"
-                rowNumLabel = Label(self.neFrame, text=statusStr )
-                rowNumLabel.grid(row=i+1, column=0, padx=10, sticky=W)  
+                rowNumLabel = Label(self.topFrame, text=statusStr )
+                rowNumLabel.grid(row=i+2, column=len(self.TradeInputField)+1, padx=10, sticky=W)  
         
 
         #Output 1: per trade analytics        
@@ -262,8 +257,8 @@ class OptionViewerGUI:
         for i, calc in enumerate(tradeCalc):
             if calc:
                 s = f"{calc['FairValue']:2.3f} {calc['Delta']:2.3f} {calc['Gamma']:2.3f} {calc['Vega']:2.3f} {calc['Rho']:2.3f}"
-                calcLabel = Label(self.neFrame, text=s)
-                calcLabel.grid(row=i+1, column=1, sticky=W)  
+                calcLabel = Label(self.topFrame, text=s)
+                calcLabel.grid(row=i+2, column=len(self.TradeInputField)+2, sticky=W)  
         
         #Output 2: portfolioi wide analytics
         #=====================================                
@@ -328,7 +323,6 @@ class OptionViewerGUI:
                 for j, field in enumerate(entryFieldName):
                     fld, _, ftype = field
                     val = r[j].get().strip()
-                    print(val)
                     if ftype == "f":
                         tradeRecord[i][fld]=float(val)
                     elif ftype=="putCall":
