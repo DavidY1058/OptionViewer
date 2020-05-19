@@ -147,6 +147,9 @@ class OptionViewerGUI:
         calcButton.grid(row=self.NScenario+3, column=len(uniqStrike)+3)
         
         
+        ########################################
+        ##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
+        #Bug: A fixed DayToExpiry makes no sense (e.g. calendar spread)#
         self.scenInputHeading = self.ScenInputField.copy()
         for i in range(len(uniqStrike)):
             self.scenInputHeading.append(f"k={uniqStrike[i]:.2f}")
@@ -178,13 +181,16 @@ class OptionViewerGUI:
         
     def perScenCalc(self, scen):
         calc = {}
-        calc["FairValue"], calc["Delta"] = 0.0, 0.0
-        for i, tr in enumerate(self.tradeRecord):
+        calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"] = 0.0, 0.0, 0.0, 0.0, 0.0
+        for tr in self.tradeRecord:
             if tr:
                 opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], scen["DayToExpiry"], tr["DvdYield"]/100.0)
                 opt.setLevel(scen["Spot"], tr["ImplVol"]/100.0, scen["RiskFree"]/100.0)
-                calc["FairValue"] +=  opt.fairValue() * tr["Notional"]
-                calc["Delta"] +=  opt.delta() * tr["Notional"]
+                calc["FairValue"] =  opt.fairValue()
+                calc["Delta"] =  opt.delta()
+                calc["Gamma"] =  opt.gamma()
+                calc["Vega"] =  opt.vega()
+                calc["Rho"] =  opt.rho()
         return calc
 
     def parseScenario(self, scenarioEntry, scenarioField):
@@ -208,7 +214,7 @@ class OptionViewerGUI:
 
 
     def scenarioCalculation(self):
-
+                
         self.scenRecord, hasAllInput = self.parseScenario(self.scenarioEntry, self.scenInputHeading)
         for i, status in enumerate(hasAllInput):
             if status:
@@ -216,15 +222,17 @@ class OptionViewerGUI:
                 rowNumLabel = Label(self.scenFrame, text=statusStr )
                 rowNumLabel.grid(row=i+2, column=len(self.scenInputHeading)+1, padx=10, sticky=W)  
 
+        fieldName = ['FairValue', 'Delta', 'Gamma', 'Vega', 'Rho']
+        for i, f in enumerate(fieldName):
+            fieldLabel = Label(self.scenFrame, text=f)
+            fieldLabel.grid(row=1, column=len(self.scenInputHeading)+2+i, sticky=W)
+        
         for i, sc in enumerate(self.scenRecord):
             if sc:
                 calc = self.perScenCalc(sc)
-                s = f"{calc['FairValue']:2.3f} {calc['Delta']:2.3f}"
-                calcLabel = Label(self.scenFrame, text=s)
-                calcLabel.grid(row=i+2, column=len(self.scenInputHeading)+2, sticky=W)  
-
-
-
+                for j, f in enumerate(fieldName):
+                    calcLabel = Label(self.scenFrame, text = f"{calc[f]:2.3f}")
+                    calcLabel.grid(row=i+2, column=len(self.scenInputHeading)+2+j, sticky=W)                    
 
      
     def mainCalculation(self):
@@ -252,23 +260,38 @@ class OptionViewerGUI:
                 rowNumLabel.grid(row=i+2, column=len(self.TradeInputField)+1, padx=10, sticky=W)  
         
 
-        #Output 1: per trade analytics        
+        #Output 1: per trade analytics            
         tradeCalc=self.perTradeCalc()
+        fieldName = ['FairValue', 'Delta', 'Gamma', 'Vega', 'Rho']
+        for i,f in enumerate(fieldName):
+            fieldLabel = Label(self.topFrame, text=f)
+            fieldLabel.grid(row=1, column=len(self.TradeInputField)+2+i, sticky=W)  
+        
+        #To-do: add a choice for dollar value vs raw
         for i, calc in enumerate(tradeCalc):
             if calc:
-                s = f"{calc['FairValue']:2.3f} {calc['Delta']:2.3f} {calc['Gamma']:2.3f} {calc['Vega']:2.3f} {calc['Rho']:2.3f}"
-                calcLabel = Label(self.topFrame, text=s)
-                calcLabel.grid(row=i+2, column=len(self.TradeInputField)+2, sticky=W)  
+                for j, f in enumerate(fieldName):
+                    #s = "%2.3f" % (calc[f]*self.tradeRecord[i]["Notional"]) #dollar value
+                    s = "%2.3f" % calc[f] #raw
+                    calcLabel = Label(self.topFrame, text=s)
+                    calcLabel.grid(row=i+2, column=len(self.TradeInputField)+2+j, sticky=W)  
+
+        
         
         #Output 2: portfolioi wide analytics
         #=====================================                
         resTitleLabel = Label(self.seFrame, text = "Portfolio Calc")
-        resTitleLabel.pack()
+        resTitleLabel.grid(row=0, column=0, sticky=W)
         
+        #Showing dollar values for the greeks and fair value
         prtfRes = self.prtfCalc()
-        s = f"FV:{prtfRes['FairValue']:.2f} Delta:{prtfRes['Delta']:.2f}"
-        resLabel = Label(self.seFrame, text = s)
-        resLabel.pack()
+        for j, f in enumerate(fieldName):
+            resFieldLabel = Label(self.seFrame, text = f)
+            resValueLabel = Label(self.seFrame, text = f"{prtfRes[f]:2.3f}")
+            resFieldLabel.grid(row=j+1, column=0, sticky=W)
+            resValueLabel.grid(row=j+1, column=1, sticky=W)
+            
+            
         
         #Output 3: payoff and sensitivity charts
         # generate likely to be most interesting range [s +/- 3*vol*sqrt(t)]
@@ -283,23 +306,33 @@ class OptionViewerGUI:
         sArr = list(sArr)
         sArr.sort()
         
-        setSpotMVAsZero=True
+        setSpotMVAsZero=True        
+        ax = self.canvas.figure.axes[0]        
+        ax.cla()
         payoffNow = self.payoffProfile(sArr, setSpotMVAsZero, False)
-        payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, True)
-        ax = self.canvas.figure.axes[0]
-        ax.set_xlim(min(sArr), max(sArr))
-        ax.set_ylim(min(payoffExpiry)*ylimAdj, max(payoffExpiry)*ylimAdj)
         ax.plot(sArr,payoffNow,color='blue', label='ValDt')   
-        ax.plot(sArr,payoffExpiry,color='red', label='Expiry')   
+        minY, maxY = min(payoffNow), max(payoffNow)
+        if max(ttmUsed)==min(ttmUsed):
+            payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, True)                
+            ax.plot(sArr,payoffExpiry,color='red', label='Expiry')   
+            minY, maxY = min(minY, min(payoffExpiry)), max(maxY, max(payoffExpiry))            
+        ax.set_xlim(min(sArr), max(sArr))
+        ax.set_ylim(minY*ylimAdj, maxY*ylimAdj)
+        
+        
         ax.set_title('Payoff Profile')
-        ax.legend()        
+        ax.legend()   
+
+
         
         deltaProfile = self.deltaProfile(sArr)
         ax = self.canvas.figure.axes[1]
+        ax.cla()
         ax.set_xlim(min(sArr), max(sArr))
         ax.set_ylim(min(deltaProfile)*ylimAdj, max(deltaProfile)*ylimAdj)
         ax.plot(sArr,deltaProfile,color='green', label='Delta')   
-
+        ax.set_title('Greek Profile')
+        ax.legend()
         self.canvas.draw()
 
 
@@ -386,13 +419,18 @@ class OptionViewerGUI:
     #Do calculation at portfolio wide level
     def prtfCalc(self):
         calc = {}
-        calc["FairValue"], calc["Delta"] = 0.0, 0.0
+        calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"] = 0.0, 0.0, 0.0, 0.0, 0.0
+        
         for i, tr in enumerate(self.tradeRecord):
             if tr:
                 opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)
                 opt.setLevel(self.spot, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
                 calc["FairValue"] +=  opt.fairValue() * tr["Notional"]
                 calc["Delta"] +=  opt.delta() * tr["Notional"]
+                calc["Gamma"] +=  opt.gamma() * tr["Notional"]
+                calc["Vega"] +=  opt.vega() * tr["Notional"]
+                calc["Rho"] +=  opt.rho() * tr["Notional"]
+                
         return calc   
           
       
