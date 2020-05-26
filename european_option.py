@@ -109,7 +109,7 @@ class EuropeanOption:
         #volga == vomma
         if not self.hasLevel: raise RuntimeError('Option current levels has not been set')
         if self.tToExpiry <= 0.0: return float('nan')
-        return self.vega*self.d1*self.d2/self.ivol
+        return self.vega()*self.d1*self.d2/self.ivol
       
     #d2V/dvdt
     def veta(self):

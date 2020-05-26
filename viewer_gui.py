@@ -1,5 +1,5 @@
 from european_option import EuropeanOption
-from tkinter import Tk, Label, Button, Entry, N, W, E, Frame, RIGHT, LEFT, Toplevel
+from tkinter import Tk, Label, Button, Entry, W, E, Frame, RIGHT, LEFT, Toplevel, Checkbutton, IntVar, TOP
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -21,11 +21,12 @@ class OptionViewerGUI:
             ]
     
     ScenInputField = ["Spot", "DayToExpiry", "RiskFree"] 
-    #Need to enter ivol for each strike as well but will dynamically generate
+    GreekTSField = ["Delta", "Gamma", "Vega", "Theta"]
+    
     
     NTradeInput = 6
-    NScenario = 5
-    
+    NScenario = 10
+    DaysPerYear = 365
     
     #GUI design:  
     #===========
@@ -61,7 +62,15 @@ class OptionViewerGUI:
         self.topFrame=topFrame
         self.swFrame=swFrame
         self.seFrame=seFrame
+        
+        self.scenWin = None
      
+        self.tsPlotSeries1="Delta"
+        self.tsPlotSeries2="Gamma"
+        
+
+        
+        
         #Input for individual trades (Top Frame)        
         #=====================================
         #Wrap the data validator
@@ -113,32 +122,60 @@ class OptionViewerGUI:
         self.scenButton = Button(topFrame, text="Scenario", command=self.scenarioWin)
         self.scenButton.grid(row=self.NTradeInput+2, column=nTradeInputField, sticky=W+E)
         
+        
 
         #Setup payoff chart area (SW Frame)        
         #=====================================        
-        fig = Figure(figsize=(14,5))
-        fig.add_subplot(131)        
-        ax2=fig.add_subplot(132)        
+        fig = Figure(figsize=(18,5))
+        fig.add_subplot(141)        
+        ax2=fig.add_subplot(142)        
         ax2.twinx()
-        ax3=fig.add_subplot(133)                
+        ax3=fig.add_subplot(143)                
         ax3.twinx()
-        
-        #fig.tight_layout(pad=1.5, w_pad=3.0)
-        #fig.tight_layout(w_pad=0.95)
-        
+        ax4=fig.add_subplot(144)                
+        ax4.twinx()        
         self.canvas = FigureCanvasTkAgg(fig, master=swFrame)
-        self.canvas.get_tk_widget().pack()
+        self.canvas.get_tk_widget().pack(side=LEFT)
         
 
+        #Choose the greeks to be displayed in timeseries plot
+
+        cbFrame = Frame(swFrame)
+        cbFrame.pack(side=RIGHT)
+                        
+        self.greekChoice=[IntVar() for i in range(len(self.GreekTSField))]
+        
+        Label(cbFrame, text="Select up to 2 greeks     ").pack()
+        Label(cbFrame, text="for timeseries chart      ").pack()
+        
+        for i, f in enumerate(self.GreekTSField):
+            Checkbutton(cbFrame, text=f, variable=self.greekChoice[i], command=self.cbCtrl).pack(side=TOP, anchor=W)
+   
+
+
     
-    
+    def cbCtrl(self):
+        nPick = 0
+        for i,c in enumerate(self.greekChoice):
+            if nPick==0 and c.get()==1: 
+                self.tsPlotSeries1=self.GreekTSField[i]
+                nPick+=1
+            elif nPick==1 and c.get()==1: 
+                self.tsPlotSeries2=self.GreekTSField[i]
+                nPick+=1
+        
     
     def scenarioWin(self):        
-        newWindow = Toplevel(self.master)
+        self.scenButton['state']='disabled'
+        
+        
+        newWindow = Toplevel(self.master)        
         newWinOffset=f"+{self.master.winfo_rootx()}+{self.master.winfo_rooty()+self.master.winfo_height()}"
         newWindow.geometry(newWinOffset)                    
         newWindow.title("Scenario")
    
+        self.scenWin = newWindow 
+    
         #Set the framework for the components     
         scenFrame = Frame(newWindow)
         scenFrame.pack()
@@ -197,7 +234,7 @@ class OptionViewerGUI:
                 calc["Gamma"] +=  opt.gamma()* tr["Notional"]
                 calc["Vega"] +=  opt.vega()* tr["Notional"]
                 calc["Rho"] +=  opt.rho()* tr["Notional"]
-                calc["Theta"] +=  opt.theta()* tr["Notional"]
+                calc["Theta"] +=  opt.theta()* tr["Notional"]/ self.DaysPerYear 
         return calc
 
     def parseScenario(self, scenarioEntry, scenarioField):
@@ -243,6 +280,11 @@ class OptionViewerGUI:
 
      
     def mainCalculation(self):
+        self.scenButton['state']='normal'
+        if self.scenWin is not None:
+           self.scenWin.destroy() 
+        
+        
         #Get the spot level 
         try:
             self.spot = float(self.spotEntry.get().strip())
@@ -291,7 +333,8 @@ class OptionViewerGUI:
         stkUsed = {tr["Strike"] for tr in self.tradeRecord if tr}
         volUsed = {tr["ImplVol"] for tr in self.tradeRecord if tr}
         ttmUsed = {tr["DayToExpiry"] for tr in self.tradeRecord if tr}
-        volSqT = max(volUsed)*(max(ttmUsed)/365.0)**0.5
+        volSqT = (self.spot*max(volUsed)/100.0)*(max(ttmUsed)/365.0)**0.5
+        
         xMin, xMax = max(0.0,self.spot-3.0*volSqT), self.spot+3.0*volSqT
         #if vol specified is small, the profile calc should at least show behaviour around all strikes
         xMin, xMax = min(xMin, min(stkUsed)/xlimAdj), max(xMax,max(stkUsed)*xlimAdj)
@@ -306,22 +349,20 @@ class OptionViewerGUI:
         ax.cla()
         payoffNow = self.payoffProfile(sArr, setSpotMVAsZero)
         ax.plot(sArr,payoffNow,color='blue', label='ValDt')   
-        ax.plot([self.spot, self.spot],[min(payoffNow), max(payoffNow)], color='darkgray', linestyle='dashed')
-        ax.plot([min(sArr),max(sArr)],[0.0,0.0], color='darkgray', linestyle='dashed')
         minY, maxY = min(payoffNow), max(payoffNow)
         if max(ttmUsed)==min(ttmUsed):
             payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, max(ttmUsed))                
             ax.plot(sArr,payoffExpiry,color='red', label='Expiry')   
             minY, maxY = min(minY, min(payoffExpiry)), max(maxY, max(payoffExpiry))            
         else:
-            payoffNext = self.payoffProfile(sArr, setSpotMVAsZero, min(ttmUsed))                
-            ax.plot(sArr,payoffNext,color='red', label='NxtExpiry')   
-            minY, maxY = min(minY, min(payoffNext)), max(maxY, max(payoffNext))            
+            payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, min(ttmUsed))                
+            ax.plot(sArr,payoffExpiry,color='red', label='NxtExpiry')   
+            minY, maxY = min(minY, min(payoffExpiry)), max(maxY, max(payoffExpiry))            
         
-        
-            
         ax.set_xlim(min(sArr), max(sArr))
         ax.set_ylim(minY*ylimAdj, maxY*ylimAdj)
+        ax.plot([self.spot, self.spot],[min(min(payoffNow), min(payoffExpiry)), max(max(payoffNow), max(payoffExpiry))], color='darkgray', linestyle='dashed')
+        ax.plot([min(sArr),max(sArr)],[0.0,0.0], color='darkgray', linestyle='dashed')
         
         
         ax.set_title('Payoff Profile')
@@ -371,20 +412,54 @@ class OptionViewerGUI:
         #Combine the legend of dual y-axes to the same box 
         line1, label1 = ax3a.get_legend_handles_labels()
         line2, label2 = ax3b.get_legend_handles_labels()
+        ax3a.set_xlabel('s')
         ax3a.legend(line1+line2, label1+label2, loc=0)
         ax3a.grid()
 
+
+        
+        #Fourth chart: Greek time series
+        tArr = list(np.linspace(1, min(ttmUsed), max(3, int(min(ttmUsed)), nXForPlot)))
+        s1, s2 = self.tsPlotSeries1.strip(), self.tsPlotSeries2.strip()
+        
+        ts1 = self.greekTimeSeries(tArr, s1.lower())
+        ts2 = self.greekTimeSeries(tArr, s2.lower())
+        
+        ax4a = self.canvas.figure.axes[5]        
+        ax4a.cla()        
+        ax4a.set_xlim(min(tArr), max(tArr))
+        ax4a.set_ylim(min(ts1)*ylimAdj, max(ts1)*ylimAdj)
+        ax4a.plot(tArr,ts1,color='midnightblue', label=s1)                           
+        ax4a.set_ylabel(s1, labelpad=1)        
+        ax4a.set_title('Greek Timeseries')
+        
+        ax4b = self.canvas.figure.axes[6]        
+        ax4b.cla()
+        ax4b.plot(tArr,ts2,color='teal', label=s2)   
+        ax4b.set_ylabel(s2, labelpad=1)
+         
+        #Combine the legend of dual y-axes to the same box 
+        line1, label1 = ax4a.get_legend_handles_labels()
+        line2, label2 = ax4b.get_legend_handles_labels()
+        ax4a.set_xlabel('Days to Expiry')
+        ax4a.legend(line1+line2, label1+label2, loc=0)
+        ax4a.grid()
+        
         self.canvas.figure.tight_layout()
         self.canvas.draw()
 
         #Output 3: portfolioi wide analytics
         #=====================================                
+        for widget in self.seFrame.winfo_children():
+            widget.destroy()
+        
         resTitleLabel = Label(self.seFrame, text = "Portfolio Calc")
         resTitleLabel.grid(row=0, column=0, sticky=W)
         
         #Showing dollar values for the greeks and fair value
-        prtfRes = self.prtfCalc()
-        for j, f in enumerate(fieldName):
+        prtffieldName = ['FairValue', 'Delta', 'Gamma', 'Vega', 'Theta', 'Rho', 'Vanna','Volga','Veta','DeltaDecay']
+        prtfRes = self.prtfCalc()                
+        for j, f in enumerate(prtffieldName ):
             resFieldLabel = Label(self.seFrame, text = f)
             resValueLabel = Label(self.seFrame, text = f"{prtfRes[f]:2.3f}")
             resFieldLabel.grid(row=j+1, column=0, sticky=W)
@@ -459,11 +534,32 @@ class OptionViewerGUI:
                     elif greekName.lower() == "rho":
                         greekArr[i] += opt.rho()*tr["Notional"]            
                     elif greekName.lower() == "theta":
-                        greekArr[i] += opt.theta()*tr["Notional"]            
+                        greekArr[i] += opt.theta()*tr["Notional"]/self.DaysPerYear             
 
                     
         return greekArr
    
+    def greekTimeSeries(self, tArr, greekName):
+        greekArr = [0.0] * len(tArr)
+        for tr in self.tradeRecord:
+            if tr:                
+                for i,t in enumerate(tArr):
+                    opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], t, tr["DvdYield"]/100.0)                
+                    opt.setLevel(self.spot, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
+                    if greekName.lower() == "delta":
+                        greekArr[i] += opt.delta()*tr["Notional"]            
+                    elif greekName.lower() == "gamma":
+                        greekArr[i] += opt.gamma()*tr["Notional"]            
+                    elif greekName.lower() == "vega":
+                        greekArr[i] += opt.vega()*tr["Notional"]            
+                    elif greekName.lower() == "rho":
+                        greekArr[i] += opt.rho()*tr["Notional"]            
+                    elif greekName.lower() == "theta":
+                        greekArr[i] += opt.theta()*tr["Notional"]/self.DaysPerYear             
+
+                    
+        return greekArr
+
          
     #Do calculation trade by trade (one set of analytics per trade)
     def perTradeCalc(self):
@@ -477,14 +573,15 @@ class OptionViewerGUI:
                 tradeCalc[i]["Gamma"] =  opt.gamma()
                 tradeCalc[i]["Vega"] =  opt.vega()
                 tradeCalc[i]["Rho"] =  opt.rho()
-                tradeCalc[i]["Theta"] =  opt.theta()
+                tradeCalc[i]["Theta"] =  opt.theta()/self.DaysPerYear 
         return tradeCalc
    
     #Do calculation at portfolio wide level
     def prtfCalc(self):
-        calc = {}
+        calc={}
         calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"], calc["Theta"] = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-        
+        calc["Vanna"], calc["Volga"], calc["Veta"], calc["DeltaDecay"]= 0.0, 0.0, 0.0, 0.0
+                            
         for i, tr in enumerate(self.tradeRecord):
             if tr:
                 opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)
@@ -494,7 +591,13 @@ class OptionViewerGUI:
                 calc["Gamma"] +=  opt.gamma() * tr["Notional"]
                 calc["Vega"] +=  opt.vega() * tr["Notional"]
                 calc["Rho"] +=  opt.rho() * tr["Notional"]
-                calc["Theta"] +=  opt.theta() * tr["Notional"]
+                calc["Theta"] +=  opt.theta() * tr["Notional"]/ self.DaysPerYear 
+                calc["Vanna"] +=  opt.vanna() * tr["Notional"]
+                calc["Volga"] +=  opt.volga() * tr["Notional"]
+                calc["Veta"] +=  opt.veta() * tr["Notional"]
+                calc["DeltaDecay"] +=  opt.deltaDecay() * tr["Notional"]
+                
+                
         return calc   
           
       
@@ -526,5 +629,6 @@ class OptionViewerGUI:
 
 
 root = Tk()
+root.geometry("+50+50")
 my_gui = OptionViewerGUI(root)
 root.mainloop()
