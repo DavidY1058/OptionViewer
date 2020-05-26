@@ -116,9 +116,10 @@ class OptionViewerGUI:
 
         #Setup payoff chart area (SW Frame)        
         #=====================================        
-        fig = Figure(figsize=(10,5))
+        fig = Figure(figsize=(14,5))
         fig.add_subplot(121)        
         fig.add_subplot(122)        
+        
         self.canvas = FigureCanvasTkAgg(fig, master=swFrame)
         self.canvas.get_tk_widget().pack()
         
@@ -140,8 +141,8 @@ class OptionViewerGUI:
         uniqStrike = list({tr["Strike"] for tr in self.tradeRecord if tr})
         self.uniqStrike = uniqStrike
         
-        titleLabel = Label(scenFrame, text = "Scenario")
-        titleLabel.grid(row=0, column=0, columnspan=2)
+        titleLabel = Label(scenFrame, text = "Changes in")
+        titleLabel.grid(row=0, column=1, columnspan=3)
         
         calcButton = Button(scenFrame, text = "Calculate", command=self.scenarioCalculation)
         calcButton.grid(row=self.NScenario+3, column=len(uniqStrike)+3)
@@ -184,13 +185,14 @@ class OptionViewerGUI:
         calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"] = 0.0, 0.0, 0.0, 0.0, 0.0
         for tr in self.tradeRecord:
             if tr:
-                opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], scen["DayToExpiry"], tr["DvdYield"]/100.0)
-                opt.setLevel(scen["Spot"], tr["ImplVol"]/100.0, scen["RiskFree"]/100.0)
-                calc["FairValue"] =  opt.fairValue()
-                calc["Delta"] =  opt.delta()
-                calc["Gamma"] =  opt.gamma()
-                calc["Vega"] =  opt.vega()
-                calc["Rho"] =  opt.rho()
+                vol = scen[f"k={tr['Strike']:.2f}"]/100.0
+                opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"]-abs(scen["DayToExpiry"]), tr["DvdYield"]/100.0)
+                opt.setLevel(self.spot+scen["Spot"], vol, (tr["RiskFree"]+scen["RiskFree"])/100.0)
+                calc["FairValue"] +=  opt.fairValue()* tr["Notional"]
+                calc["Delta"] +=  opt.delta()* tr["Notional"]
+                calc["Gamma"] +=  opt.gamma()* tr["Notional"]
+                calc["Vega"] +=  opt.vega()* tr["Notional"]
+                calc["Rho"] +=  opt.rho()* tr["Notional"]
         return calc
 
     def parseScenario(self, scenarioEntry, scenarioField):
@@ -301,7 +303,10 @@ class OptionViewerGUI:
         volUsed = {tr["ImplVol"] for tr in self.tradeRecord if tr}
         ttmUsed = {tr["DayToExpiry"] for tr in self.tradeRecord if tr}
         volSqT = max(volUsed)*(max(ttmUsed)/365.0)**0.5
-        sArr = set(np.linspace(max(0.0,self.spot-3.0*volSqT), self.spot+3.0*volSqT, nXForPlot))
+        xMin, xMax = max(0.0,self.spot-3.0*volSqT), self.spot+3.0*volSqT
+        #if vol specified is small, the profile calc should at least show behaviour around all strikes
+        xMin, xMax = min(xMin, min(stkUsed)/1.01), max(xMax,max(stkUsed)*1.01)
+        sArr = set(np.linspace(xMin, xMax, nXForPlot))
         sArr.update(stkUsed)
         sArr = list(sArr)
         sArr.sort()
@@ -309,13 +314,19 @@ class OptionViewerGUI:
         setSpotMVAsZero=True        
         ax = self.canvas.figure.axes[0]        
         ax.cla()
-        payoffNow = self.payoffProfile(sArr, setSpotMVAsZero, False)
+        payoffNow = self.payoffProfile(sArr, setSpotMVAsZero)
         ax.plot(sArr,payoffNow,color='blue', label='ValDt')   
         minY, maxY = min(payoffNow), max(payoffNow)
         if max(ttmUsed)==min(ttmUsed):
-            payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, True)                
+            payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, max(ttmUsed))                
             ax.plot(sArr,payoffExpiry,color='red', label='Expiry')   
             minY, maxY = min(minY, min(payoffExpiry)), max(maxY, max(payoffExpiry))            
+        else:
+            payoffNext = self.payoffProfile(sArr, setSpotMVAsZero, min(ttmUsed))                
+            ax.plot(sArr,payoffNext,color='red', label='NxtExpiry')   
+            minY, maxY = min(minY, min(payoffNext)), max(maxY, max(payoffNext))            
+            
+            
         ax.set_xlim(min(sArr), max(sArr))
         ax.set_ylim(minY*ylimAdj, maxY*ylimAdj)
         
@@ -325,14 +336,32 @@ class OptionViewerGUI:
 
 
         
-        deltaProfile = self.deltaProfile(sArr)
-        ax = self.canvas.figure.axes[1]
-        ax.cla()
+        deltaProfile = self.greekProfile(sArr, 'delta')
+        vegaProfile = self.greekProfile(sArr, 'vega')
+        ax = self.canvas.figure.axes[1]        
+        ax.cla()        
         ax.set_xlim(min(sArr), max(sArr))
         ax.set_ylim(min(deltaProfile)*ylimAdj, max(deltaProfile)*ylimAdj)
-        ax.plot(sArr,deltaProfile,color='green', label='Delta')   
+        ax.plot(sArr,deltaProfile,color='green', label='Delta')                   
+        ax.set_ylabel('Delta')        
         ax.set_title('Greek Profile')
-        ax.legend()
+        
+
+        if len(self.canvas.figure.axes) == 2: 
+            ax2=ax.twinx()
+        else:
+            ax2 = self.canvas.figure.axes[2]        
+        ax2.cla()
+        ax2.plot(sArr,vegaProfile,color='goldenrod', label='Vega')   
+        ax2.set_ylabel('Vega')
+        
+ 
+        #Combine the legend of dual y-axes to the same box 
+        line1, label1 = ax.get_legend_handles_labels()
+        line2, label2 = ax2.get_legend_handles_labels()
+        ax.legend(line1+line2, label1+label2, loc=0)
+
+
         self.canvas.draw()
 
 
@@ -367,7 +396,7 @@ class OptionViewerGUI:
         
         return (tradeRecord, hasAllInput)
           
-    def payoffProfile(self, sArr, spotMVAsZero=True, isAtExpiry=False):
+    def payoffProfile(self, sArr, spotMVAsZero=True, dayFromNow=0):
         if spotMVAsZero:
             mvNow = 0.0    
             for tr in self.tradeRecord:
@@ -379,10 +408,7 @@ class OptionViewerGUI:
         
         for tr in self.tradeRecord:
             if tr:
-                if isAtExpiry: 
-                    opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], 0.00, tr["DvdYield"]/100.0)
-                else:                    
-                    opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)                                                
+                opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], max(0.0, tr["DayToExpiry"]-dayFromNow), tr["DvdYield"]/100.0)                                                
                 for i,s in enumerate(sArr):
                     opt.setLevel(s, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
                     payoff[i] += opt.fairValue()*tr["Notional"]            
@@ -391,15 +417,23 @@ class OptionViewerGUI:
             payoff[i] -= mvNow
         return payoff
 
-    def deltaProfile(self, sArr):
-        deltaArr = [0.0] * len(sArr)
+    def greekProfile(self, sArr, greekName):
+        greekArr = [0.0] * len(sArr)
         for tr in self.tradeRecord:
             if tr:
                 opt = EuropeanOption(tr["CallOrPut"]=="Call", tr["Strike"], tr["DayToExpiry"], tr["DvdYield"]/100.0)                
                 for i,s in enumerate(sArr):
                     opt.setLevel(s, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
-                    deltaArr[i] += opt.delta()*tr["Notional"]            
-        return deltaArr
+                    if greekName.lower() == "delta":
+                        greekArr[i] += opt.delta()*tr["Notional"]            
+                    if greekName.lower() == "gamma":
+                        greekArr[i] += opt.gamma()*tr["Notional"]            
+                    if greekName.lower() == "vega":
+                        greekArr[i] += opt.vega()*tr["Notional"]            
+                    if greekName.lower() == "rho":
+                        greekArr[i] += opt.rho()*tr["Notional"]            
+                    
+        return greekArr
    
          
     #Do calculation trade by trade (one set of analytics per trade)
