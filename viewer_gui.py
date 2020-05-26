@@ -1,5 +1,5 @@
 from european_option import EuropeanOption
-from tkinter import Tk, Label, Button, Entry, W, E, Frame, RIGHT, LEFT, Toplevel
+from tkinter import Tk, Label, Button, Entry, N, W, E, Frame, RIGHT, LEFT, Toplevel
 
 import matplotlib
 matplotlib.use('TkAgg')
@@ -117,8 +117,14 @@ class OptionViewerGUI:
         #Setup payoff chart area (SW Frame)        
         #=====================================        
         fig = Figure(figsize=(14,5))
-        fig.add_subplot(121)        
-        fig.add_subplot(122)        
+        fig.add_subplot(131)        
+        ax2=fig.add_subplot(132)        
+        ax2.twinx()
+        ax3=fig.add_subplot(133)                
+        ax3.twinx()
+        
+        #fig.tight_layout(pad=1.5, w_pad=3.0)
+        #fig.tight_layout(w_pad=0.95)
         
         self.canvas = FigureCanvasTkAgg(fig, master=swFrame)
         self.canvas.get_tk_widget().pack()
@@ -149,8 +155,6 @@ class OptionViewerGUI:
         
         
         ########################################
-        ##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!#
-        #Bug: A fixed DayToExpiry makes no sense (e.g. calendar spread)#
         self.scenInputHeading = self.ScenInputField.copy()
         for i in range(len(uniqStrike)):
             self.scenInputHeading.append(f"k={uniqStrike[i]:.2f}")
@@ -182,7 +186,7 @@ class OptionViewerGUI:
         
     def perScenCalc(self, scen):
         calc = {}
-        calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"] = 0.0, 0.0, 0.0, 0.0, 0.0
+        calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"], calc["Theta"] = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         for tr in self.tradeRecord:
             if tr:
                 vol = scen[f"k={tr['Strike']:.2f}"]/100.0
@@ -193,6 +197,7 @@ class OptionViewerGUI:
                 calc["Gamma"] +=  opt.gamma()* tr["Notional"]
                 calc["Vega"] +=  opt.vega()* tr["Notional"]
                 calc["Rho"] +=  opt.rho()* tr["Notional"]
+                calc["Theta"] +=  opt.theta()* tr["Notional"]
         return calc
 
     def parseScenario(self, scenarioEntry, scenarioField):
@@ -224,7 +229,7 @@ class OptionViewerGUI:
                 rowNumLabel = Label(self.scenFrame, text=statusStr )
                 rowNumLabel.grid(row=i+2, column=len(self.scenInputHeading)+1, padx=10, sticky=W)  
 
-        fieldName = ['FairValue', 'Delta', 'Gamma', 'Vega', 'Rho']
+        fieldName = ['FairValue', 'Delta', 'Gamma', 'Vega', 'Theta', 'Rho']
         for i, f in enumerate(fieldName):
             fieldLabel = Label(self.scenFrame, text=f)
             fieldLabel.grid(row=1, column=len(self.scenInputHeading)+2+i, sticky=W)
@@ -264,7 +269,7 @@ class OptionViewerGUI:
 
         #Output 1: per trade analytics            
         tradeCalc=self.perTradeCalc()
-        fieldName = ['FairValue', 'Delta', 'Gamma', 'Vega', 'Rho']
+        fieldName = ['FairValue', 'Delta', 'Gamma', 'Vega', 'Theta', 'Rho']
         for i,f in enumerate(fieldName):
             fieldLabel = Label(self.topFrame, text=f)
             fieldLabel.grid(row=1, column=len(self.TradeInputField)+2+i, sticky=W)  
@@ -279,8 +284,100 @@ class OptionViewerGUI:
                     calcLabel.grid(row=i+2, column=len(self.TradeInputField)+2+j, sticky=W)  
 
         
+        #Output 2: payoff and sensitivity charts
+        # generate likely to be most interesting range [s +/- 3*vol*sqrt(t)]
+        # To-do: add a scroll bar to control the range        
+        nXForPlot, xlimAdj, ylimAdj = 21, 1.01, 1.01
+        stkUsed = {tr["Strike"] for tr in self.tradeRecord if tr}
+        volUsed = {tr["ImplVol"] for tr in self.tradeRecord if tr}
+        ttmUsed = {tr["DayToExpiry"] for tr in self.tradeRecord if tr}
+        volSqT = max(volUsed)*(max(ttmUsed)/365.0)**0.5
+        xMin, xMax = max(0.0,self.spot-3.0*volSqT), self.spot+3.0*volSqT
+        #if vol specified is small, the profile calc should at least show behaviour around all strikes
+        xMin, xMax = min(xMin, min(stkUsed)/xlimAdj), max(xMax,max(stkUsed)*xlimAdj)
+        sArr = set(np.linspace(xMin, xMax, nXForPlot))
+        sArr.update(stkUsed)
+        sArr = list(sArr)
+        sArr.sort()
         
-        #Output 2: portfolioi wide analytics
+        #First chart: payoff profile
+        setSpotMVAsZero=True        
+        ax = self.canvas.figure.axes[0]        
+        ax.cla()
+        payoffNow = self.payoffProfile(sArr, setSpotMVAsZero)
+        ax.plot(sArr,payoffNow,color='blue', label='ValDt')   
+        ax.plot([self.spot, self.spot],[min(payoffNow), max(payoffNow)], color='darkgray', linestyle='dashed')
+        ax.plot([min(sArr),max(sArr)],[0.0,0.0], color='darkgray', linestyle='dashed')
+        minY, maxY = min(payoffNow), max(payoffNow)
+        if max(ttmUsed)==min(ttmUsed):
+            payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, max(ttmUsed))                
+            ax.plot(sArr,payoffExpiry,color='red', label='Expiry')   
+            minY, maxY = min(minY, min(payoffExpiry)), max(maxY, max(payoffExpiry))            
+        else:
+            payoffNext = self.payoffProfile(sArr, setSpotMVAsZero, min(ttmUsed))                
+            ax.plot(sArr,payoffNext,color='red', label='NxtExpiry')   
+            minY, maxY = min(minY, min(payoffNext)), max(maxY, max(payoffNext))            
+        
+        
+            
+        ax.set_xlim(min(sArr), max(sArr))
+        ax.set_ylim(minY*ylimAdj, maxY*ylimAdj)
+        
+        
+        ax.set_title('Payoff Profile')
+        ax.legend()   
+        ax.grid()
+
+        #Second chart: delta and gamma profile        
+        deltaProfile = self.greekProfile(sArr, 'delta')
+        gammaProfile = self.greekProfile(sArr, 'gamma')
+        ax2a = self.canvas.figure.axes[1]        
+        ax2a.cla()        
+        ax2a.set_xlim(min(sArr), max(sArr))
+        ax2a.set_ylim(min(deltaProfile)*ylimAdj, max(deltaProfile)*ylimAdj)
+        ax2a.plot(sArr,deltaProfile,color='green', label='Delta')                   
+        ax2a.plot([self.spot, self.spot],[min(deltaProfile), max(deltaProfile)], color='lightgray', linestyle='dashed')
+        ax2a.set_ylabel('Delta', labelpad=3)        
+        ax2a.set_title('Greek Profile-1')
+        
+        ax2b = self.canvas.figure.axes[2]        
+        ax2b.cla()
+        ax2b.plot(sArr,gammaProfile,color='olive', label='Gamma')   
+        ax2b.set_ylabel('Gamma', labelpad=3)
+         
+        #Combine the legend of dual y-axes to the same box 
+        line1, label1 = ax2a.get_legend_handles_labels()
+        line2, label2 = ax2b.get_legend_handles_labels()
+        ax2a.legend(line1+line2, label1+label2, loc=0)
+        ax2a.grid()
+
+        #Third chart: theta and vega profile
+        vegaProfile = self.greekProfile(sArr, 'vega')
+        thetaProfile = self.greekProfile(sArr, 'theta')
+        ax3a = self.canvas.figure.axes[3]        
+        ax3a.cla()        
+        ax3a.set_xlim(min(sArr), max(sArr))
+        ax3a.set_ylim(min(vegaProfile)*ylimAdj, max(vegaProfile)*ylimAdj)
+        ax3a.plot(sArr,vegaProfile,color='maroon', label='Vega')                   
+        ax3a.plot([self.spot, self.spot],[min(vegaProfile), max(vegaProfile)], color='lightgray', linestyle='dashed')
+        ax3a.set_ylabel('Vega', labelpad=1)        
+        ax3a.set_title('Greek Profile-2')
+        
+        ax3b = self.canvas.figure.axes[4]        
+        ax3b.cla()
+        ax3b.plot(sArr,thetaProfile,color='goldenrod', label='Theta')   
+        ax3b.set_ylabel('Theta', labelpad=1)
+         
+        #Combine the legend of dual y-axes to the same box 
+        line1, label1 = ax3a.get_legend_handles_labels()
+        line2, label2 = ax3b.get_legend_handles_labels()
+        ax3a.legend(line1+line2, label1+label2, loc=0)
+        ax3a.grid()
+
+        self.canvas.figure.tight_layout()
+        self.canvas.draw()
+
+        #Output 3: portfolioi wide analytics
         #=====================================                
         resTitleLabel = Label(self.seFrame, text = "Portfolio Calc")
         resTitleLabel.grid(row=0, column=0, sticky=W)
@@ -292,77 +389,6 @@ class OptionViewerGUI:
             resValueLabel = Label(self.seFrame, text = f"{prtfRes[f]:2.3f}")
             resFieldLabel.grid(row=j+1, column=0, sticky=W)
             resValueLabel.grid(row=j+1, column=1, sticky=W)
-            
-            
-        
-        #Output 3: payoff and sensitivity charts
-        # generate likely to be most interesting range [s +/- 3*vol*sqrt(t)]
-        # To-do: add a scroll bar to control the range        
-        nXForPlot, ylimAdj = 21, 1.01
-        stkUsed = {tr["Strike"] for tr in self.tradeRecord if tr}
-        volUsed = {tr["ImplVol"] for tr in self.tradeRecord if tr}
-        ttmUsed = {tr["DayToExpiry"] for tr in self.tradeRecord if tr}
-        volSqT = max(volUsed)*(max(ttmUsed)/365.0)**0.5
-        xMin, xMax = max(0.0,self.spot-3.0*volSqT), self.spot+3.0*volSqT
-        #if vol specified is small, the profile calc should at least show behaviour around all strikes
-        xMin, xMax = min(xMin, min(stkUsed)/1.01), max(xMax,max(stkUsed)*1.01)
-        sArr = set(np.linspace(xMin, xMax, nXForPlot))
-        sArr.update(stkUsed)
-        sArr = list(sArr)
-        sArr.sort()
-        
-        setSpotMVAsZero=True        
-        ax = self.canvas.figure.axes[0]        
-        ax.cla()
-        payoffNow = self.payoffProfile(sArr, setSpotMVAsZero)
-        ax.plot(sArr,payoffNow,color='blue', label='ValDt')   
-        minY, maxY = min(payoffNow), max(payoffNow)
-        if max(ttmUsed)==min(ttmUsed):
-            payoffExpiry = self.payoffProfile(sArr, setSpotMVAsZero, max(ttmUsed))                
-            ax.plot(sArr,payoffExpiry,color='red', label='Expiry')   
-            minY, maxY = min(minY, min(payoffExpiry)), max(maxY, max(payoffExpiry))            
-        else:
-            payoffNext = self.payoffProfile(sArr, setSpotMVAsZero, min(ttmUsed))                
-            ax.plot(sArr,payoffNext,color='red', label='NxtExpiry')   
-            minY, maxY = min(minY, min(payoffNext)), max(maxY, max(payoffNext))            
-            
-            
-        ax.set_xlim(min(sArr), max(sArr))
-        ax.set_ylim(minY*ylimAdj, maxY*ylimAdj)
-        
-        
-        ax.set_title('Payoff Profile')
-        ax.legend()   
-
-
-        
-        deltaProfile = self.greekProfile(sArr, 'delta')
-        vegaProfile = self.greekProfile(sArr, 'vega')
-        ax = self.canvas.figure.axes[1]        
-        ax.cla()        
-        ax.set_xlim(min(sArr), max(sArr))
-        ax.set_ylim(min(deltaProfile)*ylimAdj, max(deltaProfile)*ylimAdj)
-        ax.plot(sArr,deltaProfile,color='green', label='Delta')                   
-        ax.set_ylabel('Delta')        
-        ax.set_title('Greek Profile')
-        
-
-        if len(self.canvas.figure.axes) == 2: 
-            ax2=ax.twinx()
-        else:
-            ax2 = self.canvas.figure.axes[2]        
-        ax2.cla()
-        ax2.plot(sArr,vegaProfile,color='goldenrod', label='Vega')   
-        ax2.set_ylabel('Vega')
-        
- 
-        #Combine the legend of dual y-axes to the same box 
-        line1, label1 = ax.get_legend_handles_labels()
-        line2, label2 = ax2.get_legend_handles_labels()
-        ax.legend(line1+line2, label1+label2, loc=0)
-
-
-        self.canvas.draw()
 
 
     #Read the trade input data from tradeEntry TK Entry boxes to an array
@@ -426,12 +452,15 @@ class OptionViewerGUI:
                     opt.setLevel(s, tr["ImplVol"]/100.0, tr["RiskFree"]/100.0)
                     if greekName.lower() == "delta":
                         greekArr[i] += opt.delta()*tr["Notional"]            
-                    if greekName.lower() == "gamma":
+                    elif greekName.lower() == "gamma":
                         greekArr[i] += opt.gamma()*tr["Notional"]            
-                    if greekName.lower() == "vega":
+                    elif greekName.lower() == "vega":
                         greekArr[i] += opt.vega()*tr["Notional"]            
-                    if greekName.lower() == "rho":
+                    elif greekName.lower() == "rho":
                         greekArr[i] += opt.rho()*tr["Notional"]            
+                    elif greekName.lower() == "theta":
+                        greekArr[i] += opt.theta()*tr["Notional"]            
+
                     
         return greekArr
    
@@ -448,12 +477,13 @@ class OptionViewerGUI:
                 tradeCalc[i]["Gamma"] =  opt.gamma()
                 tradeCalc[i]["Vega"] =  opt.vega()
                 tradeCalc[i]["Rho"] =  opt.rho()
+                tradeCalc[i]["Theta"] =  opt.theta()
         return tradeCalc
    
     #Do calculation at portfolio wide level
     def prtfCalc(self):
         calc = {}
-        calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"] = 0.0, 0.0, 0.0, 0.0, 0.0
+        calc["FairValue"], calc["Delta"], calc["Gamma"], calc["Vega"], calc["Rho"], calc["Theta"] = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
         
         for i, tr in enumerate(self.tradeRecord):
             if tr:
@@ -464,7 +494,7 @@ class OptionViewerGUI:
                 calc["Gamma"] +=  opt.gamma() * tr["Notional"]
                 calc["Vega"] +=  opt.vega() * tr["Notional"]
                 calc["Rho"] +=  opt.rho() * tr["Notional"]
-                
+                calc["Theta"] +=  opt.theta() * tr["Notional"]
         return calc   
           
       
