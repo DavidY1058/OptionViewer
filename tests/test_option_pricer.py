@@ -48,9 +48,6 @@ class TestEuropeanOption:
         assert self._isFloatNear(opt.fairValue(), 1.0, 1e-16)
 
 
-
-
-
     
     def test_a_fairValue(self):
         opt = self._init_option_a()
@@ -167,4 +164,181 @@ class TestEuropeanOption:
         opt = self._init_option_d()
         assert self._isFloatNear(opt.gamma(), 0.08886)  
         
+    def test_e_veta(self):
+        #veta = d2V/ dt dv = dTheta/dv
+        dvol = 0.001
         
+        opt1 = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        
+        #note for the option class, theta convention = -dV/dt        
+        t1 = -opt1.theta()
+        
+        opt2 = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300+dvol, 0.03) #spot, ivol, riskFree
+        t2 = -opt2.theta()        
+        
+        approx = (t2-t1)/dvol
+        
+        optMid = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300+dvol*0.5, 0.03) #spot, ivol, riskFree
+
+        assert self._isFloatNear( approx/ optMid.veta(), 1.0, 1e-3)
+
+    def test_e_charm(self):
+        #Delta Decay/ Charm: - d2X/dt dS = -dDelta/dt = -dTheta/dS
+        dt = 0.1
+        
+        opt1 = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        
+        #note for the option class, theta convention = -dV/dt        
+        d1 = opt1.delta()
+        
+        opt2 = EuropeanOption(True, 204.0, 91.0+dt, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        d2 = opt2.delta()        
+        
+        approx = -(d2-d1)/(dt/365.0)
+        
+        optMid = EuropeanOption(True, 204.0, 91.0+dt*0.5, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+
+        assert self._isFloatNear( approx/ optMid.charm(), 1.0, 1e-3)
+   
+    def test_e_volga(self):
+        #Delta Decay/ Charm: - d2X/dt dv = -dDelta/dt = -dTheta/dS
+        dvol = 0.001
+        
+        opt1 = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        
+        #note for the option class, theta convention = -dV/dt        
+        v1 = opt1.vega()
+        
+        opt2 = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300+dvol, 0.03) #spot, ivol, riskFree
+        v2 = opt2.vega()        
+        
+        approx = (v2-v1)/dvol
+        
+        optMid = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300+dvol*0.5, 0.03) #spot, ivol, riskFree
+
+        assert self._isFloatNear( approx/ optMid.volga(), 1.0, 1e-3)          
+        
+        
+    #For test_e, test_f assume X = option price, S=spot, v=implVol
+    #test_e and f are for second order greek testing.  with e being the Call, f being the Put
+    def test_e_vanna(self):
+        #vanna = d2V/ dS dv = dDelta/dv
+        dvol = 0.001
+        
+        opt1 = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        d1 = opt1.delta()
+        
+        opt2 = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300+dvol, 0.03) #spot, ivol, riskFree
+        d2 = opt2.delta()        
+        
+        approx = (d2-d1)/dvol
+        
+        optMid = EuropeanOption(True, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300+dvol*0.5, 0.03) #spot, ivol, riskFree
+        print(approx)
+        print(optMid.vanna())
+        assert self._isFloatNear( approx/ optMid.vanna(), 1.0, 1e-3)
+   
+
+    def test_f_vanna(self):
+        #vanna = d2V/ dS dv = dDelta/dv
+        dvol = 0.001
+        
+        opt1 = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        d1 = opt1.delta()
+        
+        opt2 = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300+dvol, 0.03) #spot, ivol, riskFree
+        d2 = opt2.delta()        
+        
+        approx = (d2-d1)/dvol
+        
+        optMid = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300+dvol*0.5, 0.03) #spot, ivol, riskFree
+        print(approx)
+        print(optMid.vanna())
+        assert self._isFloatNear( approx/ optMid.vanna(), 1.0, 1e-3)      
+        
+
+
+   
+    def test_f_veta(self):
+        #veta = d2V/ dt dv = dTheta/dv
+        dvol = 0.001
+        
+        opt1 = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        
+        #note for the option class, theta convention = -dV/dt
+        t1 = -opt1.theta()
+        
+        opt2 = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300+dvol, 0.03) #spot, ivol, riskFree
+        t2 = -opt2.theta()        
+        
+        approx = (t2-t1)/dvol
+        
+        optMid = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300+dvol*0.5, 0.03) #spot, ivol, riskFree
+
+        assert self._isFloatNear( approx/ optMid.veta(), 1.0, 1e-3)
+
+  
+    
+    def test_f_charm(self):
+        #Delta Decay/ Charm: - d2X/dt dS = -dDelta/dt = -dTheta/dS
+        dt = 0.1
+        
+        opt1 = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        
+        #note for the option class, theta convention = -dV/dt        
+        d1 = opt1.delta()
+        
+        opt2 = EuropeanOption(False, 204.0, 91.0+dt, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        d2 = opt2.delta()        
+        
+        approx = -(d2-d1)/(dt/365.0)
+        
+        optMid = EuropeanOption(False, 204.0, 91.0+dt*0.5, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+
+        assert self._isFloatNear( approx/ optMid.charm(), 1.0, 1e-3)   
+
+
+
+        
+    def test_f_volga(self):
+        #Delta Decay/ Charm: - d2X/dt dv = -dDelta/dt = -dTheta/dS
+        dvol = 0.001
+        
+        opt1 = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt1.setLevel(200.0, 0.300, 0.03) #spot, ivol, riskFree
+        
+        #note for the option class, theta convention = -dV/dt        
+        v1 = opt1.vega()
+        
+        opt2 = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        opt2.setLevel(200.0, 0.300+dvol, 0.03) #spot, ivol, riskFree
+        v2 = opt2.vega()        
+        
+        approx = (v2-v1)/dvol
+        
+        optMid = EuropeanOption(False, 204.0, 91.0, 0.02) #isCall, strike, dayToExpiry, dvdYield
+        optMid.setLevel(200.0, 0.300+dvol*0.5, 0.03) #spot, ivol, riskFree
+
+        assert self._isFloatNear( approx/ optMid.volga(), 1.0, 1e-3)        
+                

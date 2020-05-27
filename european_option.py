@@ -69,6 +69,7 @@ class EuropeanOption:
             return -kt_exp_minus_rt*norm.cdf(-self.d2)
                       
     def theta(self):
+        #Note the convention here is -dX/dt (ie positive theta for a normal call or put)
         #time decay per annum
         if not self.hasLevel: raise RuntimeError('Option current levels has not been set')
         if self.tToExpiry <= 0.0: return float('nan')
@@ -122,7 +123,7 @@ class EuropeanOption:
         return term1*term2
     
     #-d2V/dtdS
-    def deltaDecay(self):
+    def charm(self):
         #deltaDecay == charm
         if not self.hasLevel: raise RuntimeError('Option current levels has not been set')
         if self.tToExpiry <= 0.0: return float('nan')
